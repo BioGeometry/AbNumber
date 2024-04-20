@@ -1,7 +1,7 @@
 import copy
 from typing import List, Union
 
-from abnumber.common import _validate_chain_type, SCHEME_POSITION_TO_REGION, SCHEME_VERNIER, POS_REGEX
+from abnumber.common import _validate_chain_type, SCHEME_POSITION_TO_REGION, SCHEME_VERNIER, SCHEME_INTERFACE, POS_REGEX
 
 
 class Position:
@@ -116,10 +116,17 @@ class Position:
         return self.get_region().lower().startswith('cdr')
 
     def is_in_vernier(self):
-        if self.cdr_definition != 'kabat':
-            raise NotImplementedError('Vernier zone identification is currently supported '
-                                      f'only with Kabat CDR definitions, got: {self.cdr_definition}')
-        return self.cdr_definition_position in SCHEME_VERNIER.get(f'{self.cdr_definition}_{self.chain_type}', [])
+        vernier_key = f'{self.cdr_definition}_{self.chain_type}'
+        if vernier_key not in SCHEME_VERNIER:
+            raise NotImplementedError(f'Vernier zone not implemented for {vernier_key}')
+        return self.cdr_definition_position in SCHEME_VERNIER.get(vernier_key, [])
+
+    def is_in_interface(self):
+        """Check if given position is found in the VH-VL interface"""
+        vernier_key = f'{self.cdr_definition}_{self.chain_type}'
+        if vernier_key not in SCHEME_INTERFACE:
+            raise NotImplementedError(f'VH-VL interface not implemented for {vernier_key}')
+        return self.cdr_definition_position in SCHEME_INTERFACE.get(vernier_key, [])
 
     @classmethod
     def from_string(cls, position, chain_type, scheme):
