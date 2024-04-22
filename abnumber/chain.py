@@ -1,17 +1,25 @@
 from collections import OrderedDict
-from typing import Union, List, Generator, Tuple
+from typing import Union, List, Generator, Tuple, Mapping
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 import pandas as pd
 
 from abnumber.alignment import Alignment
 from abnumber.common import _anarci_align, _validate_chain_type, SUPPORTED_SCHEMES, SUPPORTED_CDR_DEFINITIONS, \
-    is_integer, SCHEME_BORDERS, _get_unique_chains
+    is_integer, SCHEME_BORDERS, _get_unique_chains, _anarci_align_multi
 from abnumber.exceptions import ChainParseError
 import numpy as np
 from Bio.Seq import Seq
 
 from abnumber.position import Position
+
+
+def _cdr_definition_to_scheme(cdr_definition: str) -> str:
+    if cdr_definition in ['imgt', 'chothia', 'kabat']:
+        return cdr_definition
+    if cdr_definition == 'north':
+        return 'chothia'
+    raise ValueError(f'Unknown CDR definition: {cdr_definition}')
 
 
 class Chain:
@@ -70,6 +78,7 @@ class Chain:
         species = kwargs.pop('species', None)
         v_gene = kwargs.pop('v_gene', None)
         j_gene = kwargs.pop('j_gene', None)
+        renumbered_aa_dict = kwargs.pop('renumbered_aa_dict', None)
         if isinstance(allowed_species, str):
             allowed_species = [allowed_species]
         if len(kwargs):
@@ -104,7 +113,7 @@ class Chain:
         """User-provided sequence identifier"""
         self.chain_type: str = chain_type
         """Chain type as identified by ANARCI: ``H`` (heavy), ``K`` (kappa light) or ``L`` (lambda light)
-        
+
         See also :meth:`Chain.is_heavy_chain` and :meth:`Chain.is_light_chain`.
         """
         self.scheme: str = scheme
@@ -128,9 +137,9 @@ class Chain:
         self.cdr3_dict = OrderedDict()
         self.fr4_dict = OrderedDict()
 
-        self._init_from_dict(aa_dict, allowed_species=allowed_species)
+        self._init_from_dict(aa_dict, allowed_species=allowed_species, renumbered_aa_dict=renumbered_aa_dict)
 
-    def _init_from_dict(self, aa_dict, allowed_species):
+    def _init_from_dict(self, aa_dict, allowed_species, renumbered_aa_dict=None):
         if self.scheme not in SUPPORTED_SCHEMES:
             raise NotImplementedError(f'Scheme "{self.scheme}" is not supported. Available schemes: {", ".join(SUPPORTED_SCHEMES)}')
         if self.cdr_definition in ['aho']:
@@ -155,12 +164,14 @@ class Chain:
         if cdr_definition_ready:
             combined_aa_dict = aa_dict
         else:
-            seq = ''.join(aa_dict[pos] for pos in sorted_positions)
-            renumbered_aa_dict = _anarci_align(
-                seq,
-                scheme=self.cdr_definition if self.cdr_definition != 'north' else 'chothia',
-                allowed_species=allowed_species
-            )[0][0]
+            if renumbered_aa_dict is None:
+                seq = ''.join(aa_dict[pos] for pos in sorted_positions)
+                renumbered_aa_dict = _anarci_align(
+                    seq,
+                    scheme=_cdr_definition_to_scheme(self.cdr_definition),
+                    allowed_species=allowed_species
+                )[0][0]
+            assert len(renumbered_aa_dict) == len(aa_dict), 'Renumbered aa_dict should have the same length as original aa_dict'
             cdr_definition_positions = [pos.number for pos in sorted(renumbered_aa_dict.keys())]
             combined_aa_dict = {}
             for orig_pos, cdr_definition_position in zip(sorted_positions, cdr_definition_positions):
@@ -216,10 +227,61 @@ class Chain:
         return SeqIO.write(records, path_or_fd, 'fasta-2line')
 
     @classmethod
-    def from_fasta(cls, path_or_handle, scheme, cdr_definition=None, as_series=False, as_generator=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
+    def from_fasta_legacy(cls, path_or_handle, scheme, cdr_definition=None, as_series=False, as_generator=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
         """Read multiple chains from FASTA"""
         generator = (cls(record.seq, name=record.name, scheme=scheme, cdr_definition=cdr_definition, **kwargs)
                      for record in SeqIO.parse(path_or_handle, 'fasta'))
+        if as_generator:
+            return generator
+        chains = list(generator)
+        if as_series:
+            return pd.Series(chains, index=[c.name for c in chains])
+        return chains
+
+    @classmethod
+    def from_fasta(cls, path_or_handle, scheme, cdr_definition=None, as_series=False, as_generator=False, ncpu=1, strict=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
+        """Read multiple chains from FASTA"""
+        records = list(SeqIO.parse(path_or_handle, 'fasta'))
+        sequences = [str(record.seq) for record in records]
+        names = [record.name for record in records]
+        return cls.from_sequences(sequences, scheme, names=names, cdr_definition=cdr_definition, as_series=as_series, as_generator=as_generator, ncpu=ncpu, strict=strict, **kwargs)
+
+    @classmethod
+    def from_sequences(cls, sequences, scheme, names=None, cdr_definition=None, as_series=False, as_generator=False, ncpu=1, strict=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
+        if names is None:
+            names = [f'seq_{i}' for i in range(len(sequences))]
+        assert len(names) == len(sequences), 'Number of names should match number of sequences'
+
+        results_multi = _anarci_align_multi(sequences, scheme=scheme, ncpu=ncpu, strict=strict, **kwargs)
+
+        num_empty_records = sum(1 for result in results_multi if result == [])
+        if num_empty_records:
+            # if not strict, an error was raised
+            print(f'Skipping {num_empty_records} records that could not be aligned by ANARCI')
+            names = [name for name, result in zip(names, results_multi) if result]
+            sequences = [sequence for sequence, result in zip(sequences, results_multi) if result]
+            results_multi = [result for result in results_multi if result]
+        num_multi_records = sum(1 for result in results_multi if len(result) > 1)
+        if num_multi_records:
+            if strict:
+                raise ChainParseError(f'Found {num_multi_records} records with multiple antibody domains: {[name for name, result in zip(names, results_multi) if len(result) > 1]}')
+            print(f'Found {num_multi_records} records with multiple antibody domains, only using the first one')
+
+        if cdr_definition != scheme:
+            cdr_results_multi = _anarci_align_multi(sequences, scheme=_cdr_definition_to_scheme(cdr_definition), ncpu=ncpu, **kwargs)
+        else:
+            cdr_results_multi = None
+
+        def _construct_chain(results, cdr_results, name):
+            # only use the first domain found
+            aa_dict, chain_type, tail, species, v_gene, j_gene = results[0]
+            renumbered_aa_dict, _, _, _, _, _ = cdr_results[0]
+            return cls(sequence=None, name=name, scheme=scheme, cdr_definition=cdr_definition,
+                         aa_dict=aa_dict, chain_type=chain_type, tail=tail, species=species, v_gene=v_gene, j_gene=j_gene,
+                         renumbered_aa_dict=renumbered_aa_dict, **kwargs)
+
+        generator = (_construct_chain(results, cdr_results, name)
+                     for results, cdr_results, name in zip(results_multi, cdr_results_multi, names))
         if as_generator:
             return generator
         chains = list(generator)
@@ -314,7 +376,7 @@ class Chain:
         elif method == 'tall':
             return self.format_tall(**kwargs)
         raise ValueError(f'Use method="wide" or method="tall", unknown method: "{method}"')
-    
+
     def print(self, method='wide', **kwargs):
         """Print string representation using :meth:`Chain.format`
 
@@ -460,7 +522,7 @@ class Chain:
 
     def clone(self, replace_seq: str = None):
         """Create a copy of this chain, optionally with a replacement sequence
-        
+
         :param replace_seq: Optional replacement sequence, needs to be the same length
         :return: new Chain object
         """
@@ -524,11 +586,12 @@ class Chain:
             assign_germline=self.v_gene is not None
         )
 
-    def graft_cdrs_onto(self, other: 'Chain', backmutate_vernier=False, backmutations: List[Union['Position',str]] = [], name: str = None) -> 'Chain':
+    def graft_cdrs_onto(self, other: 'Chain', backmutate_vernier=False, backmutate_interface=False, backmutations: List[Union['Position',str]] = [], name: str = None) -> 'Chain':
         """Graft CDRs from this Chain onto another chain
 
         :param other: Chain to graft CDRs into (source of frameworks and tail sequence)
-        :param backmutate_vernier: Also graft all Kabat Vernier positions from this chain (perform backmutations)
+        :param backmutate_vernier: Also graft all Vernier positions from this chain (perform backmutations)
+        :param backmutate_interface: Also graft all Interface positions from this chain (perform backmutations)
         :param backmutations: List of positions that should additionally be grafted from this chain (str or or :class:`Position`)
         :param name: Name of new Chain. If not provided, use name of this chain.
         :return: Chain with CDRs grafted from this chain and frameworks from the given chain
@@ -544,7 +607,8 @@ class Chain:
 
         grafted_dict = {pos: aa for pos, aa in other if not pos.is_in_cdr()}
         for pos, aa in self:
-            if pos.is_in_cdr() or (backmutate_vernier and pos.is_in_vernier()) or pos in backmutations:
+            pos: Position
+            if pos.is_in_cdr() or (backmutate_vernier and pos.is_in_vernier()) or (backmutate_interface and pos.is_in_interface()) or pos in backmutations:
                 grafted_dict[pos] = aa
 
         return Chain(sequence=None, aa_dict=grafted_dict, name=name or self.name, chain_type=self.chain_type,
@@ -552,21 +616,25 @@ class Chain:
                      v_gene=other.v_gene, j_gene=other.j_gene)
 
     def graft_cdrs_onto_human_germline(self, v_gene=None, j_gene=None,
-                                       backmutate_vernier=False, backmutations: List[Union['Position',str]] = []):
+                                       backmutate_vernier=False, backmutate_interface=False, backmutations: List[Union['Position',str]] = [],
+                                       custom_v_chains: Mapping[str, str]={}
+        ):
         """Graft CDRs from this Chain onto the nearest human germline sequence
 
         :param v_gene: Use defined V germline allele (e.g. IGHV1-18*01), gene (e.g. IGHV1-18) or family (e.g. IGHV1)
         :param j_gene: Use defined J germline allele (e.g. IGHJ1*01) or gene (e.g. IGHJ1)
-        :param backmutate_vernier: Also graft all Kabat Vernier positions from this chain (perform backmutations)
+        :param backmutate_vernier: Also graft all Vernier positions from this chain (perform backmutations)
+        :param backmutate_interface: Also graft all Interface positions from this chain (perform backmutations)
         :param backmutations: List of positions that should additionally be grafted from this chain (str or or :class:`Position`)
+        :param custom_v_chains: Custom V germline sequences to include in the search
         :return: Chain with CDRs grafted from this chain and frameworks from TODO
         """
-        germline_chain = self.find_merged_human_germline(v_gene=v_gene, j_gene=j_gene)
+        germline_chain = self.find_merged_human_germline(v_gene=v_gene, j_gene=j_gene, custom_v_chains=custom_v_chains)
 
         if self.scheme != 'imgt' or self.cdr_definition != 'imgt':
             germline_chain = germline_chain.renumber(self.scheme, self.cdr_definition)
 
-        return self.graft_cdrs_onto(germline_chain, backmutate_vernier=backmutate_vernier, backmutations=backmutations)
+        return self.graft_cdrs_onto(germline_chain, backmutate_vernier=backmutate_vernier, backmutate_interface=backmutate_interface, backmutations=backmutations)
 
     def _parse_position(self, position: Union[int, str, 'Position'], allow_raw=False):
         """Create :class:`Position` key object from string or int.
@@ -596,20 +664,28 @@ class Chain:
         """Get Position object at corresponding raw numeric position"""
         return list(self.positions.keys())[index]
 
-    def find_human_germlines(self, limit=10, v_gene=None, j_gene=None, unique=True) -> Tuple[List['Chain'], List['Chain']]:
+    def find_human_germlines(self, limit=10, v_gene=None, j_gene=None, unique=True, custom_v_chains: Mapping[str, str]={}) -> Tuple[List['Chain'], List['Chain']]:
         """Find most identical V and J germline sequences based on IMGT alignment
 
         :param limit: Number of best matching germlines to return
         :param v_gene: Filter germlines to specific V gene name
         :param j_gene: Filter germlines to specific J gene name
         :param unique: Skip germlines with duplicate amino acid sequence
+        :param custom_v_chains: Custom V germline sequences to include in the search
         :return: list of top V chains, list of top J chains
         """
-        from abnumber.germlines import get_imgt_v_chains, get_imgt_j_chains
+        from abnumber.germlines import get_imgt_v_chains, get_imgt_j_chains, germline_to_chain, HUMAN_IMGT_IG_V
+        imgt_v_chains = get_imgt_v_chains(self.chain_type).copy()
+        imgt_j_chains = get_imgt_j_chains(self.chain_type).copy()
+        if custom_v_chains:
+            assert all(len(seq) == 103 for seq in custom_v_chains.values()), 'Custom V germline sequences should be aligned to 103 amino acids long'
+            positions = HUMAN_IMGT_IG_V[self.chain_type]['positions']
+            custom_v_chains = {name: germline_to_chain(positions, seq, self.chain_type, name=name) for name, seq in custom_v_chains.items()}
+            imgt_v_chains.update(custom_v_chains)
 
         chain = self if self.scheme == 'imgt' and self.cdr_definition == 'imgt' else self.renumber('imgt')
-        v_chains = list(get_imgt_v_chains(chain.chain_type).values())
-        j_chains = list(get_imgt_j_chains(chain.chain_type).values())
+        v_chains = list(imgt_v_chains.values())
+        j_chains = list(imgt_j_chains.values())
 
         if v_gene:
             if v_gene.startswith('IGKV') and self.chain_type == 'L':
@@ -618,15 +694,15 @@ class Chain:
                 raise NotImplementedError('Cannot graft kappa chain into lambda chain')
             v_chains = [chain for chain in v_chains if chain.name.startswith(v_gene)]
             if not v_chains:
-                print('Available V genes:', get_imgt_v_chains(chain.chain_type).keys())
+                print('Available V genes:', imgt_v_chains.keys())
                 raise ValueError(f'No V genes found for "{chain.chain_type}" chain gene name "{v_gene}"')
 
         if j_gene:
             j_chains = [chain for chain in j_chains if chain.name.startswith(j_gene)]
             if not j_chains:
-                print('Available J genes:', get_imgt_j_chains(chain.chain_type).keys())
+                print('Available J genes:', imgt_j_chains.keys())
                 raise ValueError(f'No J genes found for "{chain.chain_type}" chain gene name "{j_gene}"')
-            
+
         if unique:
             v_chains = _get_unique_chains(v_chains)
             j_chains = _get_unique_chains(j_chains)
@@ -641,15 +717,16 @@ class Chain:
 
         return top_v_chains, top_j_chains
 
-    def find_merged_human_germline(self, top=0, v_gene=None, j_gene=None) -> 'Chain':
+    def find_merged_human_germline(self, top=0, v_gene=None, j_gene=None, custom_v_chains: Mapping[str, str]={}) -> 'Chain':
         """Find n-th most identical V and J germline sequence based on IMGT alignment and merge them into one Chain
 
         :param top: Return top N most identical germline (0-indexed)
         :param v_gene: Filter germlines to specific V gene name
         :param j_gene: Filter germlines to specific J gene name
+        :param custom_v_chains: Custom V germline sequences to include in the search
         :return: merged germline sequence Chain object
         """
-        v_chains, j_chains = self.find_human_germlines(limit=top+1, v_gene=v_gene, j_gene=j_gene)
+        v_chains, j_chains = self.find_human_germlines(limit=top+1, v_gene=v_gene, j_gene=j_gene, custom_v_chains=custom_v_chains)
         v_chain = v_chains[top]
         j_chain = j_chains[top]
 
@@ -663,7 +740,8 @@ class Chain:
             aa_dict=merged_dict,
             chain_type=self.chain_type,
             scheme='imgt',
-            tail=''
+            tail='',
+            name=f'{v_chain.name}, {j_chain.name}'
         )
 
     @property

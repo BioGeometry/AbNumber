@@ -1,10 +1,10 @@
 import sys
-from typing import List, Tuple
+from typing import List, Tuple, Sequence
 import re
 import numpy as np
 from abnumber.exceptions import ChainParseError
 try:
-    from anarci.anarci import anarci
+    from anarci.anarci import anarci, run_anarci
 except ImportError:
     # Only print the error without failing - required to import
     print('ANARCI module not available. Please install it separately or install AbNumber through Bioconda')
@@ -20,19 +20,8 @@ def _validate_chain_type(chain_type):
         f'Invalid chain type "{chain_type}", it should be "H" (heavy),  "L" (lambda light chian) or "K" (kappa light chain)'
 
 
-def _anarci_align(sequence, scheme, allowed_species, assign_germline=False) -> List[Tuple]:
+def _prepare_anarci_output(sequence, seq_numbered, seq_ali, scheme, assign_germline=False) -> List[Tuple]:
     from abnumber.position import Position
-    sequence = re.sub(WHITESPACE, '', sequence)
-    all_numbered, all_ali, all_hits = anarci(
-        [('id', sequence)],
-        scheme=scheme,
-        allowed_species=allowed_species,
-        assign_germline=assign_germline
-    )
-    seq_numbered = all_numbered[0]
-    seq_ali = all_ali[0]
-    if seq_numbered is None:
-        raise ChainParseError(f'Variable chain sequence not recognized: "{sequence}"')
     assert len(seq_numbered) == len(seq_ali), 'Unexpected ANARCI output'
     results = []
     for (positions, start, end), ali in zip(seq_numbered, seq_ali):
@@ -45,6 +34,45 @@ def _anarci_align(sequence, scheme, allowed_species, assign_germline=False) -> L
         tail = sequence[end+1:]
         results.append((aa_dict, chain_type, tail, species, v_gene, j_gene))
     return results
+
+
+def _anarci_align(sequence, scheme, allowed_species, assign_germline=False) -> List[Tuple]:
+    sequence = re.sub(WHITESPACE, '', sequence)
+    all_numbered, all_ali, all_hits = anarci(  # NOSONAR
+        [('id', sequence)],
+        scheme=scheme,
+        allowed_species=allowed_species,
+        assign_germline=assign_germline
+    )
+    seq_numbered = all_numbered[0]
+    seq_ali = all_ali[0]
+    if seq_numbered is None:
+        raise ChainParseError(f'Variable chain sequence not recognized: "{sequence}"')
+    results = _prepare_anarci_output(sequence, seq_numbered, seq_ali, scheme, assign_germline)
+    return results
+
+
+def _anarci_align_multi(sequences: Sequence[str], scheme, allowed_species, assign_germline=False, ncpu=1, strict=False) -> List[List[Tuple]]:
+    from abnumber.position import Position
+    sequences = [re.sub(WHITESPACE, '', sequence) for sequence in sequences]
+    results_multi = []
+    seqs, all_numbered, all_ali, all_hits = run_anarci(  # NOSONAR
+        [(f'seq_{i}', sequence) for i, sequence in enumerate(sequences)],
+        scheme=scheme,
+        allowed_species=allowed_species,
+        assign_germline=assign_germline,
+        ncpu=ncpu
+    )
+    for seq, seq_numbered, seq_ali in zip(seqs, all_numbered, all_ali):
+        if seq_numbered is None:
+            if strict:
+                raise ChainParseError(f'Variable chain sequence not recognized: "{seq[1]}"')
+            else:
+                results_multi.append([])
+                continue
+        results = _prepare_anarci_output(seq, seq_numbered, seq_ali, scheme, assign_germline)
+        results_multi.append(results)
+    return results_multi
 
 
 def _get_unique_chains(chains):
