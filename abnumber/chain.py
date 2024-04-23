@@ -678,6 +678,7 @@ class Chain:
         imgt_v_chains = get_imgt_v_chains(self.chain_type).copy()
         imgt_j_chains = get_imgt_j_chains(self.chain_type).copy()
         if custom_v_chains:
+            assert isinstance(custom_v_chains, dict), '`custom_v_chains` must be a dictionary mapping V germline names to aligned sequences with 103 amino acids long'
             assert all(len(seq) == 103 for seq in custom_v_chains.values()), 'Custom V germline sequences should be aligned to 103 amino acids long'
             positions = HUMAN_IMGT_IG_V[self.chain_type]['positions']
             custom_v_chains = {name: germline_to_chain(positions, seq, self.chain_type, name=name) for name, seq in custom_v_chains.items()}
