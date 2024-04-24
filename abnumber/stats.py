@@ -1,24 +1,48 @@
-from typing import Dict
+from typing import Optional
 import numpy as np
+from numpy.typing import NDArray
+import pandas as pd
 
 from .position import Position
 from .chain import Chain
 
-
-def get_germline_family_residue_frequency(chain: Chain, imgt_chain: Chain,
-                                          germline_family: str) -> Dict[Position, Dict[Position, float]]:
-    frequencies = GERMLINE_FREQUENCY.get(germline_family, {})
-    return {pos: _get_frequency(frequencies, imgt_pos) for pos, imgt_pos in zip(chain.positions, imgt_chain.positions)}
+_GERM_FREQ_DF_DICT = {}
 
 
-def get_chain_type_residue_frequency(chain: Chain, imgt_chain: Chain) -> Dict[Position, Dict[Position, float]]:
-    frequencies = GERMLINE_FREQUENCY[chain.chain_type]
-    return {pos: _get_frequency(frequencies, imgt_pos) for pos, imgt_pos in zip(chain.positions, imgt_chain.positions)}
+def germline_freq_df(germline_family: str) -> Optional[pd.DataFrame]:
+    """
+    Return a dataframe with Positions as indices and AA types as columns.
+    """
+    global _GERM_FREQ_DF_DICT
+    if germline_family not in GERMLINE_FREQUENCY:
+        return None
+    if germline_family not in _GERM_FREQ_DF_DICT:
+        chain_type = germline_family if len(germline_family) == 1 else germline_family[2]  # IGKV1 -> K
+        germ_freq_df = pd.DataFrame(GERMLINE_FREQUENCY[germline_family]).T.fillna(0.).sort_index(axis=1)
+        germ_freq_df.index = np.array([Position.from_string(s, chain_type, 'imgt') for s in germ_freq_df.index])
+        _GERM_FREQ_DF_DICT[germline_family] = germ_freq_df
+    return _GERM_FREQ_DF_DICT[germline_family]
 
 
-def _get_frequency(frequencies: Dict[Position, Dict[str, float]], pos: Position):
-    assert pos.scheme == 'imgt', f'Expected imgt scheme, got {pos.scheme}: {pos}'
-    return frequencies.get(pos.format(chain_type=False))
+def get_germline_family_residue_frequency_multi(imgt_chain: Chain, germline_family: str) -> NDArray[np.float64]:
+    """
+    Calculate the frequency of each amino acid at each position in the given germline family.
+    """
+    result = np.full((len(imgt_chain),), np.nan, dtype=np.float64)
+    germ_freq_df = germline_freq_df(germline_family)
+    if germ_freq_df is None:
+        return result
+    
+    positions, aas = zip(*imgt_chain)
+    positions = np.array(positions)
+    aas = np.array(aas)
+    mask = pd.Index(positions).isin(germ_freq_df.index)
+    _rows = positions[mask]
+    _cols = aas[mask]
+    _row_indices = germ_freq_df.index.get_indexer(_rows)
+    _col_indices = germ_freq_df.columns.get_indexer(_cols)
+    result[mask] = germ_freq_df.values[_row_indices, _col_indices]
+    return result
 
 
 # Calculated from a subset of OAS (see BioPhi paper)
