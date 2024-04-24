@@ -9,13 +9,13 @@ from .chain import Chain
 _GERM_FREQ_DF_DICT = {}
 
 
-def germline_freq_df(germline_family: str) -> Optional[pd.DataFrame]:
+def germline_freq_df(germline_family: str) -> pd.DataFrame:
     """
     Return a dataframe with Positions as indices and AA types as columns.
     """
     global _GERM_FREQ_DF_DICT
     if germline_family not in GERMLINE_FREQUENCY:
-        return None
+        return pd.DataFrame([], columns=list('ACDEFGHIKLMNPQRSTVWY'))
     if germline_family not in _GERM_FREQ_DF_DICT:
         chain_type = germline_family if len(germline_family) == 1 else germline_family[2]  # IGKV1 -> K
         germ_freq_df = pd.DataFrame(GERMLINE_FREQUENCY[germline_family]).T.fillna(0.).sort_index(axis=1)
@@ -32,7 +32,7 @@ def get_germline_family_residue_frequency_multi(imgt_chain: Chain, germline_fami
     germ_freq_df = germline_freq_df(germline_family)
     if germ_freq_df is None:
         return result
-    
+
     positions, aas = zip(*imgt_chain)
     positions = np.array(positions)
     aas = np.array(aas)
