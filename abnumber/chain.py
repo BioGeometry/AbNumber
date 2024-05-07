@@ -268,7 +268,7 @@ class Chain:
             print(f'Found {num_multi_records} records with multiple antibody domains, only using the first one')
 
         if cdr_definition != scheme:
-            cdr_results_multi = _anarci_align_multi(sequences, scheme=_cdr_definition_to_scheme(cdr_definition), ncpu=ncpu, **kwargs)
+            cdr_results_multi = _anarci_align_multi(sequences, scheme=_cdr_definition_to_scheme(cdr_definition or scheme), ncpu=ncpu, **kwargs)
         else:
             cdr_results_multi = None
 
