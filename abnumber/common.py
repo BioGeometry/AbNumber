@@ -11,13 +11,25 @@ except ImportError:
     print('See: https://abnumber.readthedocs.io/')
     sys.exit(1)
 
-POS_REGEX = re.compile(r'([HL]?)(\d+)([A-Z]?)')
+POS_REGEX = re.compile(r'([HLAB]?)(\d+)([A-Z]?)')
 WHITESPACE = re.compile(r'\s+')
 
 
-def _validate_chain_type(chain_type):
-    assert chain_type in ['H', 'L', 'K'], \
-        f'Invalid chain type "{chain_type}", it should be "H" (heavy),  "L" (lambda light chian) or "K" (kappa light chain)'
+def _validate_chain_type(chain_type, scheme):
+    if chain_type in ['H', 'L', 'K']:
+        return scheme in SUPPORTED_SCHEMES
+    elif chain_type in ['A', 'B']:
+        return scheme in SUPPORTED_TCR_SCHEMES
+    else:
+        f'Invalid chain type "{chain_type}", it should be "H" (heavy),  "L" (lambda light chian), "K" (kappa light chain) or "A" (alpha chain), "B" (beta chain)'
+
+
+def _chain_type_to_prefix(chain_type):
+    if chain_type in ['K', 'L']:
+        return 'L'
+    elif chain_type in ['H', 'A', 'B']:
+        return chain_type
+    raise NotImplementedError(f'Unknown chain type "{chain_type}"')
 
 
 def _prepare_anarci_output(sequence, seq_numbered, seq_ali, scheme, assign_germline=False) -> List[Tuple]:
@@ -104,6 +116,7 @@ def is_integer(object):
 
 
 SUPPORTED_SCHEMES = ['imgt', 'aho', 'chothia', 'kabat']
+SUPPORTED_TCR_SCHEMES = ['imgt', 'aho']
 SUPPORTED_CDR_DEFINITIONS = ['imgt', 'chothia', 'kabat', 'north']
 
 SCHEME_BORDERS = {

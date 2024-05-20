@@ -1,7 +1,7 @@
 import copy
 from typing import List, Union
 
-from abnumber.common import _validate_chain_type, SCHEME_POSITION_TO_REGION, SCHEME_VERNIER, SCHEME_INTERFACE, POS_REGEX
+from abnumber.common import _validate_chain_type, _chain_type_to_prefix, SCHEME_POSITION_TO_REGION, SCHEME_VERNIER, SCHEME_INTERFACE, POS_REGEX
 
 
 class Position:
@@ -12,7 +12,7 @@ class Position:
     Position objects are sortable according to the schema simply using ``sorted()``.
     """
     def __init__(self, chain_type: str, number: int, letter: str, scheme: str):
-        _validate_chain_type(chain_type)
+        _validate_chain_type(chain_type, scheme)
         self.chain_type: str = chain_type
         self.number: int = int(number)
         self.letter: str = letter.strip()
@@ -36,6 +36,7 @@ class Position:
     def set_cdr_definition(self, cdr_definition: str, cdr_definition_position: int):
         assert cdr_definition is not None, 'cdr_definition is required'
         assert cdr_definition_position is not None, 'cdr_definition_position is required'
+        _validate_chain_type(self.chain_type, cdr_definition)
         self.cdr_definition = cdr_definition
         self.cdr_definition_position = cdr_definition_position
 
@@ -81,11 +82,7 @@ class Position:
         return self._sort_key() < other._sort_key()
 
     def chain_type_prefix(self):
-        if self.chain_type == 'H':
-            return 'H'
-        if self.chain_type in ['K', 'L']:
-            return 'L'
-        raise NotImplementedError(f'Unknown chain type "{self.chain_type}"')
+        return _chain_type_to_prefix(self.chain_type)
 
     def _sort_key(self):
         letter_ord = ord(self.letter) if self.letter else 0
@@ -135,8 +132,8 @@ class Position:
         Note that Positions parsed from string do not support separate CDR definitions.
         """
         match = POS_REGEX.match(position.upper())
-        _validate_chain_type(chain_type)
-        expected_chain_prefix = 'H' if chain_type == 'H' else 'L'
+        _validate_chain_type(chain_type, scheme)
+        expected_chain_prefix = _chain_type_to_prefix(chain_type)
         if match is None:
             raise IndexError(f'Expected position format chainNumberLetter '
                              f'(e.g. "{expected_chain_prefix}112A" or "112A"), got: "{position}"')
@@ -153,10 +150,16 @@ class Position:
     def is_light_chain(self):
         return self.chain_type in 'KL'
 
+    def is_alpha_chain(self):
+        return self.chain_type == 'A'
+
+    def is_beta_chain(self):
+        return self.chain_type == 'B'
+
 
 def sort_positions(positions: List[str], chain_type: str, scheme: str) -> List:
     """Sort position strings to correct order based on given scheme"""
-    has_prefix = [p.startswith('H') or p.startswith('L') for p in positions]
+    has_prefix = [p[0] in 'HLAB' for p in positions]
     assert all(has_prefix) or not any(has_prefix), 'Inconsistent position prefix'
     has_prefix = all(has_prefix)
 

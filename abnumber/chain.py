@@ -107,7 +107,9 @@ class Chain:
                 raise ChainParseError(f'Found {len(results)} antibody domains in sequence: "{sequence}"')
             aa_dict, chain_type, tail, species, v_gene, j_gene = results[0]
 
-        _validate_chain_type(chain_type)
+        _validate_chain_type(chain_type, scheme)
+        if cdr_definition is not None:
+            _validate_chain_type(chain_type, cdr_definition)
 
         self.name: str = name
         """User-provided sequence identifier"""
@@ -486,6 +488,14 @@ class Chain:
     def is_kappa_light_chain(self):
         """Check if this chain is kappa light chain (``chain_type=="K"``)"""
         return self.chain_type == 'K'
+
+    def is_alpha_chain(self):
+        """Check if this chain is TCR alpha chain (``chain_type=="A"``)"""
+        return self.chain_type == 'A'
+
+    def is_beta_chain(self):
+        """Check if this chain is TCR beta chain (``chain_type=="B"``)"""
+        return self.chain_type == 'B'
 
     def align(self, *other) -> 'Alignment':
         """Align this chain to other chains by using their existing numbering
