@@ -97,8 +97,10 @@ class Position:
             raise NotImplementedError(f'Cannot compare positions of scheme: {self.scheme}')
         return self.is_heavy_chain(), self.number, letter_ord
 
-    def get_region(self):
-        """Get string name of this position's region
+    def get_region(self, show_vernier=False, show_interface=False):
+        """Get string name of this position's region.
+        If `show_vernier` is True, the region name will be extended with " Vernier" if the position is in the vernier zone.
+        If `show_interface` is True, the region name will be extended with " Interface" if the position is on the VH-VL interface.
 
         :return: uppercase string, one of: ``"FR1", "CDR1", "FR2", "CDR2", "FR3", "CDR3", "FR4"``
         """
@@ -106,7 +108,12 @@ class Position:
             regions = SCHEME_POSITION_TO_REGION[self.cdr_definition]
         else:
             regions = SCHEME_POSITION_TO_REGION[f'{self.cdr_definition}_{self.chain_type}']
-        return regions[self.cdr_definition_position]
+        region = regions[self.cdr_definition_position]
+        if show_vernier and self.is_in_vernier():
+            region += ' Vernier'
+        if show_interface and self.is_in_interface():
+            region += ' Interface'
+        return region
 
     def is_in_cdr(self):
         """Check if given position is found in the CDR regions"""
