@@ -136,6 +136,9 @@ class Position:
 
     def is_in_nanobody_conserved_spots(self):
         """Check if given position is found in the Nanobody conserved spots, which are reported to be important for stability and solubility of nanobodies"""
+        if self.chain_type != 'H':
+            return False
+        
         key = f'{self.cdr_definition}_{self.chain_type}'
         if key not in SCHEME_NANOBODY:
             raise NotImplementedError(f'Nanobody conserved spots not implemented for {key}')
