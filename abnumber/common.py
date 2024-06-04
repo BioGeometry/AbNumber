@@ -185,3 +185,10 @@ SCHEME_INTERFACE = {
       'north_L': frozenset([38, 43, 44]),
       'kabat_L': frozenset([38, 43, 44]),
 }
+
+SCHEME_NANOBODY = {
+       'imgt_H': frozenset([42, 49, 50, 52]),
+    'chothia_H': frozenset([37, 44, 45, 47]),
+      'north_H': frozenset([37, 44, 45, 47]),
+      'kabat_H': frozenset([37, 44, 45, 47]),
+}

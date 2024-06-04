@@ -5,7 +5,8 @@ from Bio.SeqRecord import SeqRecord
 import pandas as pd
 
 from abnumber.alignment import Alignment
-from abnumber.common import _anarci_align, _validate_chain_type, SUPPORTED_SCHEMES, SUPPORTED_CDR_DEFINITIONS, \
+from abnumber.common import _anarci_align, _validate_chain_type, \
+    SUPPORTED_SCHEMES, SUPPORTED_CDR_DEFINITIONS, _chain_type_to_prefix, \
     is_integer, SCHEME_BORDERS, _get_unique_chains, _anarci_align_multi
 from abnumber.exceptions import ChainParseError
 import numpy as np
@@ -218,6 +219,9 @@ class Chain:
         """Check chain equality. Only checks scheme, aligned sequence and tail sequence, ignores name, metadata and CDR definitions."""
         assert isinstance(other, Chain), f'Can only compare Chain to another Chain, got {type(other)}: {other}'
         return self.positions == other.positions and self.tail == other.tail
+
+    def chain_type_prefix(self):
+        return _chain_type_to_prefix(self.chain_type)
 
     @classmethod
     def to_fasta(cls, chains, path_or_fd, keep_tail=False, description=''):
@@ -596,12 +600,13 @@ class Chain:
             assign_germline=self.v_gene is not None
         )
 
-    def graft_cdrs_onto(self, other: 'Chain', backmutate_vernier=False, backmutate_interface=False, backmutations: List[Union['Position',str]] = [], name: str = None) -> 'Chain':
+    def graft_cdrs_onto(self, other: 'Chain', backmutate_vernier=False, backmutate_interface=False, backmutate_nanobody=False, backmutations: List[Union['Position',str]] = [], name: str = None) -> 'Chain':
         """Graft CDRs from this Chain onto another chain
 
         :param other: Chain to graft CDRs into (source of frameworks and tail sequence)
         :param backmutate_vernier: Also graft all Vernier positions from this chain (perform backmutations)
         :param backmutate_interface: Also graft all Interface positions from this chain (perform backmutations)
+        :param backmutate_nanobody: Also graft all Nanobody conserved positions from this chain (perform backmutations)
         :param backmutations: List of positions that should additionally be grafted from this chain (str or or :class:`Position`)
         :param name: Name of new Chain. If not provided, use name of this chain.
         :return: Chain with CDRs grafted from this chain and frameworks from the given chain
@@ -618,7 +623,13 @@ class Chain:
         grafted_dict = {pos: aa for pos, aa in other if not pos.is_in_cdr()}
         for pos, aa in self:
             pos: Position
-            if pos.is_in_cdr() or (backmutate_vernier and pos.is_in_vernier()) or (backmutate_interface and pos.is_in_interface()) or pos in backmutations:
+            if (
+                pos.is_in_cdr() or \
+                (backmutate_vernier and pos.is_in_vernier()) or \
+                (backmutate_interface and pos.is_in_interface()) or \
+                (backmutate_nanobody and pos.is_in_nanobody_conserved_spots()) or \
+                pos in backmutations
+            ):
                 grafted_dict[pos] = aa
 
         return Chain(sequence=None, aa_dict=grafted_dict, name=name or self.name, chain_type=self.chain_type,
@@ -626,7 +637,10 @@ class Chain:
                      v_gene=other.v_gene, j_gene=other.j_gene)
 
     def graft_cdrs_onto_human_germline(self, v_gene=None, j_gene=None,
-                                       backmutate_vernier=False, backmutate_interface=False, backmutations: List[Union['Position',str]] = [],
+                                       backmutate_vernier=False,
+                                       backmutate_interface=False,
+                                       backmutate_nanobody=False,
+                                       backmutations: List[Union['Position',str]] = [],
                                        custom_v_chains: Mapping[str, str]={}
         ):
         """Graft CDRs from this Chain onto the nearest human germline sequence
@@ -635,6 +649,7 @@ class Chain:
         :param j_gene: Use defined J germline allele (e.g. IGHJ1*01) or gene (e.g. IGHJ1)
         :param backmutate_vernier: Also graft all Vernier positions from this chain (perform backmutations)
         :param backmutate_interface: Also graft all Interface positions from this chain (perform backmutations)
+        :param backmutate_nanobody: Also graft all Nanobody conserved positions from this chain (perform backmutations)
         :param backmutations: List of positions that should additionally be grafted from this chain (str or or :class:`Position`)
         :param custom_v_chains: Custom V germline sequences to include in the search
         :return: Chain with CDRs grafted from this chain and frameworks from TODO
@@ -644,7 +659,7 @@ class Chain:
         if self.scheme != 'imgt' or self.cdr_definition != 'imgt':
             germline_chain = germline_chain.renumber(self.scheme, self.cdr_definition)
 
-        return self.graft_cdrs_onto(germline_chain, backmutate_vernier=backmutate_vernier, backmutate_interface=backmutate_interface, backmutations=backmutations)
+        return self.graft_cdrs_onto(germline_chain, backmutate_vernier=backmutate_vernier, backmutate_interface=backmutate_interface, backmutate_nanobody=backmutate_nanobody, backmutations=backmutations)
 
     def _parse_position(self, position: Union[int, str, 'Position'], allow_raw=False):
         """Create :class:`Position` key object from string or int.

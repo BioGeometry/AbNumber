@@ -1,7 +1,7 @@
 import copy
 from typing import List, Union
 
-from abnumber.common import _validate_chain_type, _chain_type_to_prefix, SCHEME_POSITION_TO_REGION, SCHEME_VERNIER, SCHEME_INTERFACE, POS_REGEX
+from abnumber.common import _validate_chain_type, _chain_type_to_prefix, SCHEME_POSITION_TO_REGION, SCHEME_VERNIER, SCHEME_INTERFACE, SCHEME_NANOBODY, POS_REGEX
 
 
 class Position:
@@ -97,7 +97,7 @@ class Position:
             raise NotImplementedError(f'Cannot compare positions of scheme: {self.scheme}')
         return self.is_heavy_chain(), self.number, letter_ord
 
-    def get_region(self, show_vernier=False, show_interface=False):
+    def get_region(self, show_vernier=False, show_interface=False, show_nanobody_conserved_spots=False):
         """Get string name of this position's region.
         If `show_vernier` is True, the region name will be extended with " Vernier" if the position is in the vernier zone.
         If `show_interface` is True, the region name will be extended with " Interface" if the position is on the VH-VL interface.
@@ -113,6 +113,8 @@ class Position:
             region += ' Vernier'
         if show_interface and self.is_in_interface():
             region += ' Interface'
+        if show_nanobody_conserved_spots and self.is_in_nanobody_conserved_spots():
+            region += ' Nanobody'
         return region
 
     def is_in_cdr(self):
@@ -120,17 +122,24 @@ class Position:
         return self.get_region().lower().startswith('cdr')
 
     def is_in_vernier(self):
-        vernier_key = f'{self.cdr_definition}_{self.chain_type}'
-        if vernier_key not in SCHEME_VERNIER:
-            raise NotImplementedError(f'Vernier zone not implemented for {vernier_key}')
-        return self.cdr_definition_position in SCHEME_VERNIER.get(vernier_key, [])
+        key = f'{self.cdr_definition}_{self.chain_type}'
+        if key not in SCHEME_VERNIER:
+            raise NotImplementedError(f'Vernier zone not implemented for {key}')
+        return self.cdr_definition_position in SCHEME_VERNIER.get(key, [])
 
     def is_in_interface(self):
         """Check if given position is found in the VH-VL interface"""
-        vernier_key = f'{self.cdr_definition}_{self.chain_type}'
-        if vernier_key not in SCHEME_INTERFACE:
-            raise NotImplementedError(f'VH-VL interface not implemented for {vernier_key}')
-        return self.cdr_definition_position in SCHEME_INTERFACE.get(vernier_key, [])
+        key = f'{self.cdr_definition}_{self.chain_type}'
+        if key not in SCHEME_INTERFACE:
+            raise NotImplementedError(f'VH-VL interface not implemented for {key}')
+        return self.cdr_definition_position in SCHEME_INTERFACE.get(key, [])
+
+    def is_in_nanobody_conserved_spots(self):
+        """Check if given position is found in the Nanobody conserved spots, which are reported to be important for stability and solubility of nanobodies"""
+        key = f'{self.cdr_definition}_{self.chain_type}'
+        if key not in SCHEME_NANOBODY:
+            raise NotImplementedError(f'Nanobody conserved spots not implemented for {key}')
+        return self.cdr_definition_position in SCHEME_NANOBODY.get(key, [])
 
     @classmethod
     def from_string(cls, position, chain_type, scheme):
