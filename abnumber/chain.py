@@ -600,10 +600,11 @@ class Chain:
             assign_germline=self.v_gene is not None
         )
 
-    def graft_cdrs_onto(self, other: 'Chain', backmutate_vernier=False, backmutate_interface=False, backmutate_nanobody=False, backmutations: List[Union['Position',str]] = [], name: str = None) -> 'Chain':
+    def graft_cdrs_onto(self, other: 'Chain', backmutate_cdr=True, backmutate_vernier=False, backmutate_interface=False, backmutate_nanobody=False, backmutations: List[Union['Position',str]] = [], name: str = None) -> 'Chain':
         """Graft CDRs from this Chain onto another chain
 
         :param other: Chain to graft CDRs into (source of frameworks and tail sequence)
+        :param backmutate_cdr: Graft all CDR positions from this chain (perform backmutations). Defaults to True.
         :param backmutate_vernier: Also graft all Vernier positions from this chain (perform backmutations)
         :param backmutate_interface: Also graft all Interface positions from this chain (perform backmutations)
         :param backmutate_nanobody: Also graft all Nanobody conserved positions from this chain (perform backmutations)
@@ -624,7 +625,7 @@ class Chain:
         for pos, aa in self:
             pos: Position
             if (
-                pos.is_in_cdr() or \
+                (backmutate_cdr and pos.is_in_cdr()) or \
                 (backmutate_vernier and pos.is_in_vernier()) or \
                 (backmutate_interface and pos.is_in_interface()) or \
                 (backmutate_nanobody and pos.is_in_nanobody_conserved_spots()) or \
