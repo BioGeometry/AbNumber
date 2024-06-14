@@ -72,7 +72,7 @@ class Chain:
     :param germline: (Internal use only) Germline as identified by ANARCI
     """
 
-    def __init__(self, sequence, scheme, cdr_definition=None, name=None, assign_germline=False, allowed_species=None, **kwargs):
+    def __init__(self, sequence, scheme, cdr_definition=None, name=None, assign_germline=False, allowed_species=['human'], **kwargs):
         aa_dict = kwargs.pop('aa_dict', None)
         chain_type = kwargs.pop('chain_type', None)
         tail = kwargs.pop('tail', None)
@@ -233,32 +233,20 @@ class Chain:
         return SeqIO.write(records, path_or_fd, 'fasta-2line')
 
     @classmethod
-    def from_fasta_legacy(cls, path_or_handle, scheme, cdr_definition=None, as_series=False, as_generator=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
-        """Read multiple chains from FASTA"""
-        generator = (cls(record.seq, name=record.name, scheme=scheme, cdr_definition=cdr_definition, **kwargs)
-                     for record in SeqIO.parse(path_or_handle, 'fasta'))
-        if as_generator:
-            return generator
-        chains = list(generator)
-        if as_series:
-            return pd.Series(chains, index=[c.name for c in chains])
-        return chains
-
-    @classmethod
-    def from_fasta(cls, path_or_handle, scheme, cdr_definition=None, as_series=False, as_generator=False, ncpu=1, strict=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
+    def from_fasta(cls, path_or_handle, scheme, cdr_definition=None, allowed_species=['human'], as_series=False, as_generator=False, ncpu=1, strict=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
         """Read multiple chains from FASTA"""
         records = list(SeqIO.parse(path_or_handle, 'fasta'))
         sequences = [str(record.seq) for record in records]
         names = [record.name for record in records]
-        return cls.from_sequences(sequences, scheme, names=names, cdr_definition=cdr_definition, as_series=as_series, as_generator=as_generator, ncpu=ncpu, strict=strict, **kwargs)
+        return cls.from_sequences(sequences, scheme, names=names, cdr_definition=cdr_definition, allowed_species=allowed_species, as_series=as_series, as_generator=as_generator, ncpu=ncpu, strict=strict, **kwargs)
 
     @classmethod
-    def from_sequences(cls, sequences, scheme, names=None, cdr_definition=None, as_series=False, as_generator=False, ncpu=1, strict=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
+    def from_sequences(cls, sequences, scheme, names=None, cdr_definition=None, allowed_species=['human'],as_series=False, as_generator=False, ncpu=1, strict=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
         if names is None:
             names = [f'seq_{i}' for i in range(len(sequences))]
         assert len(names) == len(sequences), 'Number of names should match number of sequences'
 
-        results_multi = _anarci_align_multi(sequences, scheme=scheme, ncpu=ncpu, strict=strict, **kwargs)
+        results_multi = _anarci_align_multi(sequences, scheme=scheme, allowed_species=allowed_species, ncpu=ncpu, strict=strict, **kwargs)
 
         num_empty_records = sum(1 for result in results_multi if result == [])
         if num_empty_records:
@@ -274,7 +262,7 @@ class Chain:
             print(f'Found {num_multi_records} records with multiple antibody domains, only using the first one')
 
         if cdr_definition != scheme:
-            cdr_results_multi = _anarci_align_multi(sequences, scheme=_cdr_definition_to_scheme(cdr_definition or scheme), ncpu=ncpu, **kwargs)
+            cdr_results_multi = _anarci_align_multi(sequences, scheme=_cdr_definition_to_scheme(cdr_definition or scheme), allowed_species=allowed_species, ncpu=ncpu, **kwargs)
         else:
             cdr_results_multi = None
 
