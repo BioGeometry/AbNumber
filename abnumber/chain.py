@@ -233,15 +233,15 @@ class Chain:
         return SeqIO.write(records, path_or_fd, 'fasta-2line')
 
     @classmethod
-    def from_fasta(cls, path_or_handle, scheme, cdr_definition=None, allowed_species=['human'], as_series=False, as_generator=False, ncpu=1, strict=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
+    def from_fasta(cls, path_or_handle, scheme, cdr_definition=None, allowed_species=['human'], as_series=False, as_generator=False, ncpu=1, strict=False, allow_multi_domains=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
         """Read multiple chains from FASTA"""
         records = list(SeqIO.parse(path_or_handle, 'fasta'))
         sequences = [str(record.seq) for record in records]
         names = [record.name for record in records]
-        return cls.from_sequences(sequences, scheme, names=names, cdr_definition=cdr_definition, allowed_species=allowed_species, as_series=as_series, as_generator=as_generator, ncpu=ncpu, strict=strict, **kwargs)
+        return cls.from_sequences(sequences, scheme, names=names, cdr_definition=cdr_definition, allowed_species=allowed_species, as_series=as_series, as_generator=as_generator, ncpu=ncpu, strict=strict, allow_multi_domains=allow_multi_domains, **kwargs)
 
     @classmethod
-    def from_sequences(cls, sequences, scheme, names=None, cdr_definition=None, allowed_species=['human'],as_series=False, as_generator=False, ncpu=1, strict=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
+    def from_sequences(cls, sequences, scheme, names=None, cdr_definition=None, allowed_species=['human'], as_series=False, as_generator=False, ncpu=1, strict=False, allow_multi_domains=False, **kwargs) -> Union[List[Union['Chain', List['Chain']]], pd.Series, Generator[Union['Chain', List['Chain']], None, None]]:
         if names is None:
             names = [f'seq_{i}' for i in range(len(sequences))]
         assert len(names) == len(sequences), 'Number of names should match number of sequences'
@@ -259,20 +259,29 @@ class Chain:
         if num_multi_records:
             if strict:
                 raise ChainParseError(f'Found {num_multi_records} records with multiple antibody domains: {[name for name, result in zip(names, results_multi) if len(result) > 1]}')
-            print(f'Found {num_multi_records} records with multiple antibody domains, only using the first one')
+            if not allow_multi_domains:
+                print(f'Found {num_multi_records} records with multiple antibody domains, only using the first one')
 
-        if cdr_definition != scheme:
+        if cdr_definition is not None and cdr_definition != scheme:
             cdr_results_multi = _anarci_align_multi(sequences, scheme=_cdr_definition_to_scheme(cdr_definition or scheme), allowed_species=allowed_species, ncpu=ncpu, **kwargs)
         else:
-            cdr_results_multi = None
+            cdr_results_multi = results_multi
 
         def _construct_chain(results, cdr_results, name):
-            # only use the first domain found
-            aa_dict, chain_type, tail, species, v_gene, j_gene = results[0]
-            renumbered_aa_dict, _, _, _, _, _ = cdr_results[0]
-            return cls(sequence=None, name=name, scheme=scheme, cdr_definition=cdr_definition,
-                         aa_dict=aa_dict, chain_type=chain_type, tail=tail, species=species, v_gene=v_gene, j_gene=j_gene,
-                         renumbered_aa_dict=renumbered_aa_dict, **kwargs)
+            if allow_multi_domains:
+                return [
+                    cls(sequence=None, name=name, scheme=scheme, cdr_definition=cdr_definition,
+                        aa_dict=aa_dict, chain_type=chain_type, tail=tail, species=species, v_gene=v_gene, j_gene=j_gene,
+                        renumbered_aa_dict=renumbered_aa_dict, **kwargs)
+                    for (aa_dict, chain_type, tail, species, v_gene, j_gene), (renumbered_aa_dict, _, _, _, _, _) in zip(results, cdr_results)
+                ]
+            else:
+                # only use the first domain found
+                aa_dict, chain_type, tail, species, v_gene, j_gene = results[0]
+                renumbered_aa_dict, _, _, _, _, _ = cdr_results[0]
+                return cls(sequence=None, name=name, scheme=scheme, cdr_definition=cdr_definition,
+                            aa_dict=aa_dict, chain_type=chain_type, tail=tail, species=species, v_gene=v_gene, j_gene=j_gene,
+                            renumbered_aa_dict=renumbered_aa_dict, **kwargs)
 
         generator = (_construct_chain(results, cdr_results, name)
                      for results, cdr_results, name in zip(results_multi, cdr_results_multi, names))
@@ -280,7 +289,7 @@ class Chain:
             return generator
         chains = list(generator)
         if as_series:
-            return pd.Series(chains, index=[c.name for c in chains])
+            return pd.Series(chains, index=[(c[0] if allow_multi_domains else c).name for c in chains])
         return chains
 
     def to_seq_record(self, keep_tail=False, description=''):
