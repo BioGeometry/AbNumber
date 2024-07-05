@@ -35,15 +35,17 @@ def _chain_type_to_prefix(chain_type):
 def _prepare_anarci_output(sequence, seq_numbered, seq_ali, scheme, assign_germline=False) -> List[Tuple]:
     from abnumber.position import Position
     assert len(seq_numbered) == len(seq_ali), 'Unexpected ANARCI output'
+
     results = []
-    for (positions, start, end), ali in zip(seq_numbered, seq_ali):
+    for i, ((positions, start, end), ali) in enumerate(zip(seq_numbered, seq_ali)):
         chain_type = ali['chain_type']
         species = ali['species']
         v_gene = ali['germlines']['v_gene'][0][1] if assign_germline else None
         j_gene = ali['germlines']['j_gene'][0][1] if assign_germline else None
         aa_dict = {Position(chain_type=chain_type, number=num, letter=letter, scheme=scheme): aa
                    for (num, letter), aa in positions if aa != '-'}
-        tail = sequence[end+1:]
+        next_domain_start = seq_numbered[i+1][1] if i+1 < len(seq_numbered) else len(sequence)
+        tail = sequence[end+1: next_domain_start]
         results.append((aa_dict, chain_type, tail, species, v_gene, j_gene))
     return results
 
@@ -75,10 +77,10 @@ def _anarci_align_multi(sequences: Sequence[str], scheme, allowed_species, assig
         assign_germline=assign_germline,
         ncpu=ncpu
     )
-    for seq, seq_numbered, seq_ali in zip(seqs, all_numbered, all_ali):
+    for (name, seq), seq_numbered, seq_ali in zip(seqs, all_numbered, all_ali):
         if seq_numbered is None:
             if strict:
-                raise ChainParseError(f'Variable chain sequence not recognized: "{seq[1]}"')
+                raise ChainParseError(f'Variable chain sequence not recognized: "{seq}"')
             else:
                 results_multi.append([])
                 continue
