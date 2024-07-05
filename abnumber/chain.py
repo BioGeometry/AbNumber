@@ -233,15 +233,15 @@ class Chain:
         return SeqIO.write(records, path_or_fd, 'fasta-2line')
 
     @classmethod
-    def from_fasta(cls, path_or_handle, scheme, cdr_definition=None, allowed_species=['human'], as_series=False, as_generator=False, ncpu=1, strict=False, allow_multi_domains=False, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
+    def from_fasta(cls, path_or_handle, scheme, cdr_definition=None, allowed_species=['human'], as_series=False, as_generator=False, ncpu=1, strict=False, allow_multi_domains=False, skip_empty_chains=True, **kwargs) -> Union[List['Chain'], pd.Series, Generator['Chain', None, None]]:
         """Read multiple chains from FASTA"""
         records = list(SeqIO.parse(path_or_handle, 'fasta'))
         sequences = [str(record.seq) for record in records]
         names = [record.name for record in records]
-        return cls.from_sequences(sequences, scheme, names=names, cdr_definition=cdr_definition, allowed_species=allowed_species, as_series=as_series, as_generator=as_generator, ncpu=ncpu, strict=strict, allow_multi_domains=allow_multi_domains, **kwargs)
+        return cls.from_sequences(sequences, scheme, names=names, cdr_definition=cdr_definition, allowed_species=allowed_species, as_series=as_series, as_generator=as_generator, ncpu=ncpu, strict=strict, allow_multi_domains=allow_multi_domains, skip_empty_chains=skip_empty_chains, **kwargs)
 
     @classmethod
-    def from_sequences(cls, sequences, scheme, names=None, cdr_definition=None, allowed_species=['human'], as_series=False, as_generator=False, ncpu=1, strict=False, allow_multi_domains=False, **kwargs) -> Union[List[Union['Chain', List['Chain']]], pd.Series, Generator[Union['Chain', List['Chain']], None, None]]:
+    def from_sequences(cls, sequences, scheme, names=None, cdr_definition=None, allowed_species=['human'], as_series=False, as_generator=False, ncpu=1, strict=False, allow_multi_domains=False, skip_empty_chains=True, **kwargs) -> Union[List[Union[None, 'Chain', List['Chain']]], pd.Series, Generator[Union[None, 'Chain', List['Chain']], None, None]]:
         if names is None:
             names = [f'seq_{i}' for i in range(len(sequences))]
         assert len(names) == len(sequences), 'Number of names should match number of sequences'
@@ -249,7 +249,7 @@ class Chain:
         results_multi = _anarci_align_multi(sequences, scheme=scheme, allowed_species=allowed_species, ncpu=ncpu, strict=strict, **kwargs)
 
         num_empty_records = sum(1 for result in results_multi if result == [])
-        if num_empty_records:
+        if num_empty_records and skip_empty_chains:
             # if not strict, an error was raised
             print(f'Skipping {num_empty_records} records that could not be aligned by ANARCI')
             names = [name for name, result in zip(names, results_multi) if result]
@@ -283,7 +283,7 @@ class Chain:
                             aa_dict=aa_dict, chain_type=chain_type, tail=tail, species=species, v_gene=v_gene, j_gene=j_gene,
                             renumbered_aa_dict=renumbered_aa_dict, **kwargs)
 
-        generator = (_construct_chain(results, cdr_results, name)
+        generator = (_construct_chain(results, cdr_results, name) if len(results) else ([] if allow_multi_domains else None)
                      for results, cdr_results, name in zip(results_multi, cdr_results_multi, names))
         if as_generator:
             return generator
