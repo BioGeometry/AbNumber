@@ -39,6 +39,8 @@ def _prepare_anarci_output(sequence, seq_numbered, seq_ali, scheme, assign_germl
     results = []
     for i, ((positions, start, end), ali) in enumerate(zip(seq_numbered, seq_ali)):
         chain_type = ali['chain_type']
+        if chain_type not in SUPPORTED_CHAIN_TYPES:
+            continue
         species = ali['species']
         v_gene = ali['germlines']['v_gene'][0][1] if assign_germline else None
         j_gene = ali['germlines']['j_gene'][0][1] if assign_germline else None
@@ -117,6 +119,7 @@ def is_integer(object):
     return isinstance(object, int) or isinstance(object, np.integer)
 
 
+SUPPORTED_CHAIN_TYPES = ['H', 'L', 'K', 'A', 'B']
 SUPPORTED_SCHEMES = ['imgt', 'aho', 'chothia', 'kabat']
 SUPPORTED_TCR_SCHEMES = ['imgt', 'aho']
 SUPPORTED_CDR_DEFINITIONS = ['imgt', 'chothia', 'kabat', 'north']
