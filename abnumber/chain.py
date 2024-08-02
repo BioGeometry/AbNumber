@@ -80,6 +80,8 @@ class Chain:
         v_gene = kwargs.pop('v_gene', None)
         j_gene = kwargs.pop('j_gene', None)
         renumbered_aa_dict = kwargs.pop('renumbered_aa_dict', None)
+        start_idx = kwargs.pop('start_idx', None)
+        end_idx = kwargs.pop('end_idx', None)
         if isinstance(allowed_species, str):
             allowed_species = [allowed_species]
         if len(kwargs):
@@ -106,7 +108,7 @@ class Chain:
             results = _anarci_align(sequence, scheme=scheme, allowed_species=allowed_species, assign_germline=assign_germline)
             if len(results) > 1:
                 raise ChainParseError(f'Found {len(results)} antibody domains in sequence: "{sequence}"')
-            aa_dict, chain_type, tail, species, v_gene, j_gene = results[0]
+            aa_dict, chain_type, tail, species, v_gene, j_gene, start_idx, end_idx = results[0]
 
         _validate_chain_type(chain_type, scheme)
         if cdr_definition is not None:
@@ -131,6 +133,10 @@ class Chain:
         """V gene germline as identified by ANARCI (if assign_germline is True)"""
         self.j_gene: str = j_gene
         """J gene germline as identified by ANARCI (if assign_germline is True)"""
+        self._start_idx: int = start_idx
+        """Start index of the chain in the original sequence"""
+        self._end_idx: int = end_idx
+        """End index of the chain in the original sequence"""
 
         self.fr1_dict = OrderedDict()
         self.cdr1_dict = OrderedDict()
@@ -272,16 +278,16 @@ class Chain:
                 return [
                     cls(sequence=None, name=name, scheme=scheme, cdr_definition=cdr_definition,
                         aa_dict=aa_dict, chain_type=chain_type, tail=tail, species=species, v_gene=v_gene, j_gene=j_gene,
-                        renumbered_aa_dict=renumbered_aa_dict, **kwargs)
-                    for (aa_dict, chain_type, tail, species, v_gene, j_gene), (renumbered_aa_dict, _, _, _, _, _) in zip(results, cdr_results)
+                        renumbered_aa_dict=renumbered_aa_dict, start_idx=start_idx, end_idx=end_idx, **kwargs)
+                    for (aa_dict, chain_type, tail, species, v_gene, j_gene, start_idx, end_idx), (renumbered_aa_dict, _, _, _, _, _) in zip(results, cdr_results)
                 ]
             else:
                 # only use the first domain found
-                aa_dict, chain_type, tail, species, v_gene, j_gene = results[0]
-                renumbered_aa_dict, _, _, _, _, _ = cdr_results[0]
+                aa_dict, chain_type, tail, species, v_gene, j_gene, start_idx, end_idx = results[0]
+                renumbered_aa_dict, _, _, _, _, _, _, _ = cdr_results[0]
                 return cls(sequence=None, name=name, scheme=scheme, cdr_definition=cdr_definition,
                             aa_dict=aa_dict, chain_type=chain_type, tail=tail, species=species, v_gene=v_gene, j_gene=j_gene,
-                            renumbered_aa_dict=renumbered_aa_dict, **kwargs)
+                            renumbered_aa_dict=renumbered_aa_dict, start_idx=start_idx, end_idx=end_idx, **kwargs)
 
         generator = (_construct_chain(results, cdr_results, name) if len(results) else ([] if allow_multi_domains else None)
                      for results, cdr_results, name in zip(results_multi, cdr_results_multi, names))

@@ -48,7 +48,7 @@ def _prepare_anarci_output(sequence, seq_numbered, seq_ali, scheme, assign_germl
                    for (num, letter), aa in positions if aa != '-'}
         next_domain_start = seq_numbered[i+1][1] if i+1 < len(seq_numbered) else len(sequence)
         tail = sequence[end+1: next_domain_start]
-        results.append((aa_dict, chain_type, tail, species, v_gene, j_gene))
+        results.append((aa_dict, chain_type, tail, species, v_gene, j_gene, start, end))
     return results
 
 
