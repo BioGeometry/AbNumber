@@ -7,20 +7,12 @@ import pandas as pd
 from abnumber.alignment import Alignment
 from abnumber.common import _anarci_align, _validate_chain_type, \
     SUPPORTED_SCHEMES, SUPPORTED_CDR_DEFINITIONS, _chain_type_to_prefix, \
-    is_integer, SCHEME_BORDERS, _get_unique_chains, _anarci_align_multi
+    is_integer, SCHEME_BORDERS, _get_unique_chains, _anarci_align_multi, _cdr_definition_to_scheme
 from abnumber.exceptions import ChainParseError
 import numpy as np
 from Bio.Seq import Seq
 
 from abnumber.position import Position
-
-
-def _cdr_definition_to_scheme(cdr_definition: str) -> str:
-    if cdr_definition in ['imgt', 'chothia', 'kabat']:
-        return cdr_definition
-    if cdr_definition == 'north':
-        return 'chothia'
-    raise ValueError(f'Unknown CDR definition: {cdr_definition}')
 
 
 class Chain:
@@ -112,7 +104,7 @@ class Chain:
 
         _validate_chain_type(chain_type, scheme)
         if cdr_definition is not None:
-            _validate_chain_type(chain_type, cdr_definition)
+            _validate_chain_type(chain_type, _cdr_definition_to_scheme(cdr_definition))
 
         self.name: str = name
         """User-provided sequence identifier"""

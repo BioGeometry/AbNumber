@@ -1,7 +1,7 @@
 import copy
 from typing import List, Union
 
-from abnumber.common import _validate_chain_type, _chain_type_to_prefix, SCHEME_POSITION_TO_REGION, SCHEME_VERNIER, SCHEME_INTERFACE, SCHEME_NANOBODY, POS_REGEX
+from abnumber.common import _validate_chain_type, _chain_type_to_prefix, SCHEME_POSITION_TO_REGION, SCHEME_VERNIER, SCHEME_INTERFACE, SCHEME_NANOBODY, POS_REGEX, _cdr_definition_to_scheme
 
 
 class Position:
@@ -36,7 +36,7 @@ class Position:
     def set_cdr_definition(self, cdr_definition: str, cdr_definition_position: int):
         assert cdr_definition is not None, 'cdr_definition is required'
         assert cdr_definition_position is not None, 'cdr_definition_position is required'
-        _validate_chain_type(self.chain_type, cdr_definition)
+        _validate_chain_type(self.chain_type, _cdr_definition_to_scheme(cdr_definition))
         self.cdr_definition = cdr_definition
         self.cdr_definition_position = cdr_definition_position
 
@@ -138,7 +138,7 @@ class Position:
         """Check if given position is found in the Nanobody conserved spots, which are reported to be important for stability and solubility of nanobodies"""
         if self.chain_type != 'H':
             return False
-        
+
         key = f'{self.cdr_definition}_{self.chain_type}'
         if key not in SCHEME_NANOBODY:
             raise NotImplementedError(f'Nanobody conserved spots not implemented for {key}')

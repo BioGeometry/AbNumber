@@ -15,11 +15,19 @@ POS_REGEX = re.compile(r'([HLAB]?)(\d+)([A-Z]?)')
 WHITESPACE = re.compile(r'\s+')
 
 
+def _cdr_definition_to_scheme(cdr_definition: str) -> str:
+    if cdr_definition in ['imgt', 'chothia', 'kabat']:
+        return cdr_definition
+    if cdr_definition == 'north':
+        return 'chothia'
+    raise ValueError(f'Unknown CDR definition: {cdr_definition}')
+
+
 def _validate_chain_type(chain_type, scheme):
     if chain_type in ['H', 'L', 'K']:
-        return scheme in SUPPORTED_SCHEMES
+        assert scheme in SUPPORTED_SCHEMES
     elif chain_type in ['A', 'B']:
-        return scheme in SUPPORTED_TCR_SCHEMES
+        assert scheme in SUPPORTED_TCR_SCHEMES
     else:
         f'Invalid chain type "{chain_type}", it should be "H" (heavy),  "L" (lambda light chian), "K" (kappa light chain) or "A" (alpha chain), "B" (beta chain)'
 
