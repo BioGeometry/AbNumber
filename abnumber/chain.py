@@ -271,7 +271,7 @@ class Chain:
                     cls(sequence=None, name=name, scheme=scheme, cdr_definition=cdr_definition,
                         aa_dict=aa_dict, chain_type=chain_type, tail=tail, species=species, v_gene=v_gene, j_gene=j_gene,
                         renumbered_aa_dict=renumbered_aa_dict, start_idx=start_idx, end_idx=end_idx, **kwargs)
-                    for (aa_dict, chain_type, tail, species, v_gene, j_gene, start_idx, end_idx), (renumbered_aa_dict, _, _, _, _, _) in zip(results, cdr_results)
+                    for (aa_dict, chain_type, tail, species, v_gene, j_gene, start_idx, end_idx), (renumbered_aa_dict, _, _, _, _, _, _, _) in zip(results, cdr_results)
                 ]
             else:
                 # only use the first domain found
